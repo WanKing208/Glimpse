@@ -1,8 +1,17 @@
-# Glimpse
+<p align="center">
+  <img src="docs/logo.png" width="120" alt="Glimpse" />
+</p>
 
-> 一个为 mihomo（Clash Meta）打造的原生风控制台 · A native-feeling console for mihomo (Clash Meta).
+<h1 align="center">Glimpse</h1>
 
-纯 Flutter 自绘，无 WebView，启动即用。
+<p align="center">
+  一个为 mihomo（Clash Meta）打造的原生风控制台<br/>
+  <i>A native-feeling console for mihomo (Clash Meta)</i>
+</p>
+
+<p align="center">
+  纯 Flutter 自绘 · 无 WebView · 启动即用
+</p>
 
 <p align="center">
   <img src="docs/screenshots/1-仪表盘.png" width="24%" />
