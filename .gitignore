@@ -18,6 +18,7 @@ android/key.properties
 
 # 本地产物
 *.apk
+!dist/*.apk
 *.aab
 *.hap
 
