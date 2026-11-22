@@ -831,7 +831,7 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
                   ),
                 ),
                 const SizedBox(width: 6),
-                _MiniDelay(delay, onTap: _testGroup, size: 11.5),
+                _MiniDelay(delay, onTap: _testGroup, size: 12.5),
               ],
             ),
           ],
@@ -1191,6 +1191,24 @@ class _ProviderCardState extends State<_ProviderCard> {
       ..sort();
     final avgDelay =
         delays.isEmpty ? 0 : delays[delays.length ~/ 2];
+    // 分段统计：<300ms 绿、300-699 黄、>=700 或超时 红
+    var fastCount = 0;
+    var midCount = 0;
+    var slowCount = 0;
+    var deadCount = 0;
+    for (final n in nodes) {
+      final d = n.delay ?? 0;
+      if (d <= 0) {
+        deadCount++;
+      } else if (d < 300) {
+        fastCount++;
+      } else if (d < 700) {
+        midCount++;
+      } else {
+        slowCount++;
+      }
+    }
+    if (fastCount + midCount + slowCount + deadCount == 0) deadCount = 1;
     final availColor = avgDelay == 0
         ? AppColors.danger
         : (avgDelay < 300
@@ -1288,20 +1306,46 @@ class _ProviderCardState extends State<_ProviderCard> {
                         fontSize: 11,
                         fontWeight: FontWeight.w600)),
                 const Spacer(),
-                Text(
-                  avgDelay == 0 ? '全部超时' : '中位 $avgDelay ms',
-                  style: TextStyle(color: s.textTertiary, fontSize: 11),
-                ),
+                if (total > 0)
+                  Text(
+                    '共 $total 个',
+                    style: TextStyle(color: s.textTertiary, fontSize: 11),
+                  ),
               ],
             ),
             const SizedBox(height: 6),
             ClipRRect(
               borderRadius: BorderRadius.circular(Radii.pill),
-              child: LinearProgressIndicator(
-                value: total == 0 ? 0 : avail / total,
-                minHeight: 6,
-                backgroundColor: s.block,
-                valueColor: AlwaysStoppedAnimation(availColor),
+              child: Container(
+                height: 6,
+                color: s.block,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (fastCount > 0)
+                      Expanded(
+                        flex: fastCount,
+                        child: const ColoredBox(color: AppColors.success),
+                      ),
+                    if (midCount > 0)
+                      Expanded(
+                        flex: midCount,
+                        child: const ColoredBox(color: AppColors.warning),
+                      ),
+                    if (slowCount > 0)
+                      Expanded(
+                        flex: slowCount,
+                        child: const ColoredBox(color: AppColors.danger),
+                      ),
+                    if (deadCount > 0)
+                      Expanded(
+                        flex: deadCount,
+                        child: ColoredBox(
+                          color: s.textTertiary.withValues(alpha: 0.45),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -1385,11 +1429,11 @@ class _ProviderNodesSheetState extends ConsumerState<_ProviderNodesSheet> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             decoration: BoxDecoration(
-              color: s.card,
+              color: s.inset,
               borderRadius: BorderRadius.circular(
                   ref.watch(settingsProvider).nodeRadius),
               border: Border.all(
-                  color: s.hairline.withValues(alpha: 0.32),
+                  color: s.hairline.withValues(alpha: 0.22),
                   width: 0.5),
             ),
             child: Row(
@@ -1961,15 +2005,16 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
             padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
             decoration: BoxDecoration(
               color: selected
-                  ? cs.primary.withValues(alpha: 0.12)
+                  ? cs.primary.withValues(alpha: 0.24)
                   : s.inset,
               borderRadius: BorderRadius.circular(
                   ref.watch(settingsProvider).nodeRadius),
-              border: Border.all(
-                color: selected
-                    ? cs.primary.withValues(alpha: 0.45)
-                    : s.hairline,
-              ),
+              border: selected
+                  ? null
+                  : Border.all(
+                      color: s.hairline.withValues(alpha: 0.22),
+                      width: 0.5,
+                    ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2025,7 +2070,7 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
                                     size: 14, color: s.textTertiary),
                               )
                             : _MiniDelay(delay,
-                                onTap: () => _testNode(n)),
+                                onTap: () => _testNode(n), size: 11),
                   ],
                 ),
               ],
@@ -2046,10 +2091,6 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
               children: [
                 Row(
                   children: [
-                    if (group != null) ...[
-                      _GroupLogo(proxy: group, size: 20),
-                      const SizedBox(width: 7),
-                    ],
                     Expanded(
                       child: Text(
                         widget.groupName,
@@ -2062,26 +2103,8 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
                             fontWeight: FontWeight.w700),
                       ),
                     ),
-                    JellyPress(
-                      haptic: false,
-                      onTap: () => _testAll(nodes),
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: s.block,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: _testing
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 1.6),
-                              )
-                            : Icon(Icons.speed_rounded,
-                                size: 16, color: s.textSecondary),
-                      ),
-                    ),
+                    if (group != null)
+                      _GroupLogo(proxy: group, size: 34),
                   ],
                 ),
                 Text(
@@ -2112,7 +2135,7 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    _MiniDelay(nowDelay, onTap: () => _testAll(nodes)),
+                    _MiniDelay(nowDelay, onTap: () => _testAll(nodes), size: 11),
                   ],
                 ),
               ],
