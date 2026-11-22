@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.png" width="120" alt="Glimpse" />
+  <img src="docs/logo.png" width="150" alt="Glimpse" />
 </p>
 
 <h1 align="center">Glimpse</h1>
