@@ -83,6 +83,9 @@ class Settings {
     this.activeBackendId = '',
     this.cardRadius = 16.0,
     this.nodeRadius = 13.0,
+    this.nodeFontSize = 11.5,
+    this.nodeGap = 4.0,
+    this.nodePadV = 9.0,
     this.delayTestUrl = 'https://www.gstatic.com/generate_204',
     this.delayTestMode = 'app',
     this.useWallpaper = false,
@@ -180,6 +183,15 @@ class Settings {
   /// 节点卡圆角
   final double nodeRadius;
 
+  /// 节点名称字号
+  final double nodeFontSize;
+
+  /// 节点卡上下间距
+  final double nodeGap;
+
+  /// 节点卡内部上下留白
+  final double nodePadV;
+
   /// 测延时用的地址
   final String delayTestUrl;
 
@@ -265,6 +277,9 @@ class Settings {
     String? activeBackendId,
     double? cardRadius,
     double? nodeRadius,
+    double? nodeFontSize,
+    double? nodeGap,
+    double? nodePadV,
   }) {
     return Settings(
       baseUrl: baseUrl ?? this.baseUrl,
@@ -316,6 +331,9 @@ class Settings {
       activeBackendId: activeBackendId ?? this.activeBackendId,
       cardRadius: cardRadius ?? this.cardRadius,
       nodeRadius: nodeRadius ?? this.nodeRadius,
+      nodeFontSize: nodeFontSize ?? this.nodeFontSize,
+      nodeGap: nodeGap ?? this.nodeGap,
+      nodePadV: nodePadV ?? this.nodePadV,
     );
   }
 }
@@ -403,6 +421,9 @@ class SettingsNotifier extends Notifier<Settings> {
       activeBackendId: prefs.getString('${_kPrefix}activeBackend') ?? '',
       cardRadius: prefs.getDouble('${_kPrefix}cardRadius') ?? 16.0,
       nodeRadius: prefs.getDouble('${_kPrefix}nodeRadius') ?? 13.0,
+      nodeFontSize: prefs.getDouble('${_kPrefix}nodeFont') ?? 11.5,
+      nodeGap: prefs.getDouble('${_kPrefix}nodeGap') ?? 4.0,
+      nodePadV: prefs.getDouble('${_kPrefix}nodePadV') ?? 9.0,
     );
   }
 
@@ -481,6 +502,9 @@ class SettingsNotifier extends Notifier<Settings> {
     prefs.setString('${_kPrefix}activeBackend', s.activeBackendId);
     prefs.setDouble('${_kPrefix}cardRadius', s.cardRadius);
     prefs.setDouble('${_kPrefix}nodeRadius', s.nodeRadius);
+    prefs.setDouble('${_kPrefix}nodeFont', s.nodeFontSize);
+    prefs.setDouble('${_kPrefix}nodeGap', s.nodeGap);
+    prefs.setDouble('${_kPrefix}nodePadV', s.nodePadV);
   }
 
   void addBackend(Backend b) {
@@ -579,7 +603,20 @@ final proxiesProvider = StreamProvider<Map<String, MihomoProxy>>((ref) async* {
       if (settings.demoMode) {
         yield Map<String, MihomoProxy>.unmodifiable(demo.proxies);
       } else if (client != null) {
-        final data = await client.proxies();
+        // 偶发失败重试两次，避免一次抖动就整页空白
+        var data = <String, MihomoProxy>{};
+        Object? lastErr;
+        for (var attempt = 0; attempt < 3; attempt++) {
+          try {
+            data = await client.proxies();
+            lastErr = null;
+            break;
+          } catch (e) {
+            lastErr = e;
+            await Future<void>.delayed(const Duration(milliseconds: 400));
+          }
+        }
+        if (lastErr != null) throw lastErr;
         ref.read(clientErrorProvider.notifier).set(null);
 
         // 有些内核的 /proxies 只返回分组，节点在 /providers/proxies 里
@@ -627,6 +664,12 @@ final proxiesProvider = StreamProvider<Map<String, MihomoProxy>>((ref) async* {
       }
     } catch (e) {
       ref.read(clientErrorProvider.notifier).set(describeError(e));
+      // 拉取失败时继续显示上一次的数据，不要清空整页
+      if (lastGood != null) {
+        yield lastGood!;
+        await Future<void>.delayed(const Duration(seconds: 2));
+        continue;
+      }
       yield const {};
     }
     await Future<void>.delayed(const Duration(seconds: 3));
@@ -640,6 +683,12 @@ class DelayOverridesNotifier extends Notifier<Map<String, int>> {
 
   void set(String name, int delay) {
     state = {...state, name: delay};
+  }
+
+  /// 清除某个节点的测速结果（切换节点后让它回到内核值）
+  void remove(String name) {
+    if (!state.containsKey(name)) return;
+    state = {...state}..remove(name);
   }
 }
 
@@ -1153,3 +1202,29 @@ class ManualGroupsNotifier extends Notifier<Set<String>> {
 final manualGroupsProvider =
     NotifierProvider<ManualGroupsNotifier, Set<String>>(
         ManualGroupsNotifier.new);
+
+
+/// 本地记录「刚手动选择的节点」，用于立即反映到分组卡（内核轮询有延迟）
+class NowOverrideNotifier extends Notifier<Map<String, String>> {
+  @override
+  Map<String, String> build() => const {};
+
+  void set(String group, String node) {
+    state = {...state, group: node};
+  }
+
+  /// 内核数据追上了就清掉本地覆盖
+  void sync(String group, String? now) {
+    final cur = state[group];
+    if (cur == null) return;
+    if (cur == now) {
+      final next = {...state}..remove(group);
+      state = next;
+    }
+  }
+}
+
+final nowOverrideProvider =
+    NotifierProvider<NowOverrideNotifier, Map<String, String>>(
+  NowOverrideNotifier.new,
+);

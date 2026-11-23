@@ -680,26 +680,8 @@ class _GroupLogo extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final icon = proxy.icon;
-    if (icon == null || icon.isEmpty) {
-      return CookieBadge(
-        icon: Icons.layers_rounded,
-        size: size,
-        color: cs.primary.withValues(alpha: 0.12),
-      );
-    }
-    return CachedLogo(
-      url: icon,
-      size: size,
-      fallback: CookieBadge(
-        icon: Icons.layers_rounded,
-        size: size,
-        color: cs.primary.withValues(alpha: 0.12),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      ProxyLogo(proxy: proxy, size: size);
 }
 
 class _GroupCard extends ConsumerStatefulWidget {
@@ -735,9 +717,16 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
   Widget build(BuildContext context) {
     final s = surfacesOf(context);
     final group = widget.group;
-    final now = group.now;
+    final nowOverride = ref.watch(nowOverrideProvider)[group.name];
+    final now = nowOverride ?? group.now;
+    // 内核数据追上后清掉本地覆盖
+    if (nowOverride != null && group.now == nowOverride) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(nowOverrideProvider.notifier).sync(group.name, group.now);
+      });
+    }
     final delay = effectiveDelay(
-      group,
+      group.copyWith(now: now),
       widget.proxies,
       widget.overrides,
     );
@@ -831,7 +820,14 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
                   ),
                 ),
                 const SizedBox(width: 6),
-                _MiniDelay(delay, onTap: _testGroup, size: 12.5),
+                if (_testing)
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 1.8),
+                  )
+                else
+                  _MiniDelay(delay, onTap: _testGroup, size: 14),
               ],
             ),
           ],
@@ -840,11 +836,17 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
     );
   }
 
-  /// 点延时角标 → 测整组
+  bool _testing = false;
+
+  /// 点延时角标 → 测整组（/group/{name}/delay 失败时逐个节点测）
   Future<void> _testGroup() async {
+    if (_testing) return;
+    // 用户重新测速 => 恢复自动选择，先解锁
+    ref.read(manualGroupsProvider.notifier).clear(widget.group.name);
     final settings = ref.read(settingsProvider);
     final client = ref.read(clientProvider);
     if (client == null) return;
+
     var url = settings.delayTestUrl;
     if (settings.delayTestMode != 'app') {
       final provs = ref.read(providersProvider).value ?? const {};
@@ -855,12 +857,47 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
           .toList();
       if (configured.isNotEmpty) url = configured.first;
     }
-    final result = await client.testGroupDelay(widget.group.name, url: url);
+
+    setState(() => _testing = true);
+    var result = <String, int>{};
+    try {
+      result = await client.testGroupDelay(widget.group.name, url: url);
+    } catch (_) {
+      result = {};
+    }
+
+    // 有些内核/分组不支持整组接口，退化成逐节点测速
+    if (result.isEmpty) {
+      final proxies = ref.read(providersProvider).value ?? const {};
+      final providerOf = <String, String>{};
+      for (final e in proxies.entries) {
+        for (final n in e.value.proxies) {
+          providerOf[n.name] = e.key;
+        }
+      }
+      final nodes = widget.group.all
+          .map((n) => widget.proxies[n])
+          .whereType<MihomoProxy>()
+          .where((n) => !n.isGroup)
+          .toList();
+      for (final n in nodes) {
+        try {
+          final prov = providerOf[n.name];
+          final d = prov != null
+              ? await client.testProviderNode(prov, n.name)
+              : await client.testDelay(n.name, url: url);
+          if (d != null) result[n.name] = d;
+        } catch (_) {
+          result[n.name] = -1;
+        }
+      }
+    }
+
     if (!mounted) return;
-    ref.read(manualGroupsProvider.notifier).clear(widget.group.name);
     for (final e in result.entries) {
       ref.read(delayOverridesProvider.notifier).set(e.key, e.value);
     }
+    setState(() => _testing = false);
   }
 }
 
@@ -1420,14 +1457,16 @@ class _ProviderNodesSheetState extends ConsumerState<_ProviderNodesSheet> {
     Widget tile(int i) {
       final n = nodes[i];
       final delay = effectiveDelay(n, _proxies, _delays);
+      final st = ref.watch(settingsProvider);
       return Padding(
-        padding: const EdgeInsets.only(bottom: 4),
+        padding: EdgeInsets.only(bottom: st.nodeGap),
         child: JellyPress(
           haptic: false,
           onTap: () => _testOne(n),
           scaleTo: 0.98,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            padding:
+                EdgeInsets.symmetric(horizontal: 10, vertical: st.nodePadV),
             decoration: BoxDecoration(
               color: s.inset,
               borderRadius: BorderRadius.circular(
@@ -1808,6 +1847,7 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
 
   Future<void> _testAll(List<MihomoProxy> nodes) async {
     if (_testing) return;
+    ref.read(manualGroupsProvider.notifier).clear(widget.groupName);
     setState(() => _testing = true);
     final client = ref.read(clientProvider);
     final settings = ref.read(settingsProvider);
@@ -1858,7 +1898,6 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
 
     if (mounted) {
       setState(() => _testing = false);
-      ref.read(manualGroupsProvider.notifier).clear(widget.groupName);
     }
     } catch (_) {
       if (mounted) setState(() => _testing = false);
@@ -1931,6 +1970,10 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
       await ref
           .read(clientProvider)
           ?.selectProxy(widget.groupName, node.name);
+      // 立即反映到界面，避免等下一轮轮询
+      ref.read(nowOverrideProvider.notifier).set(widget.groupName, node.name);
+      // 清掉该节点旧的测速结果，让延时回到内核最新值
+      ref.read(delayOverridesProvider.notifier).remove(node.name);
     } catch (_) {}
     ref.invalidate(proxiesProvider);
   }
@@ -1982,7 +2025,8 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
         : nodes;
     final sorted = _applyNodeSort(filtered, settings.nodeSortMode, _delays);
 
-    final now = group?.now;
+    final now =
+        ref.watch(nowOverrideProvider)[widget.groupName] ?? group?.now;
     final nowNode = now == null ? null : proxies[now];
     final nowDelay = now == null
         ? null
@@ -1995,14 +2039,15 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
       final n = sorted[i];
       final delay = effectiveDelay(n, _proxies, _delays);
       final selected = now == n.name;
+      final st = ref.watch(settingsProvider);
       return Padding(
-        padding: const EdgeInsets.only(bottom: 4),
+        padding: EdgeInsets.only(bottom: st.nodeGap),
         child: JellyPress(
           haptic: false,
           onTap: () => _select(n),
           scaleTo: 0.98,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
+            padding: EdgeInsets.fromLTRB(11, st.nodePadV, 11, st.nodePadV),
             decoration: BoxDecoration(
               color: selected
                   ? cs.primary.withValues(alpha: 0.24)
@@ -2033,7 +2078,7 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: s.textPrimary,
-                          fontSize: 12.5,
+                          fontSize: st.nodeFontSize,
                           fontWeight:
                               selected ? FontWeight.w700 : FontWeight.w600,
                         ),

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -53,7 +54,8 @@ enum ConnGroup {
   rule('rule', '按规则'),
   chains('chains', '按链路'),
   outbound('outbound', '按出口'),
-  type('type', '按类型');
+  type('type', '按类型'),
+  time('time', '按时间');
 
   const ConnGroup(this.id, this.label);
   final String id;
@@ -294,7 +296,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   }
 
   Widget _flatList(List<ConnectionInfo> list, List<String> fields) {
-    final sorted = [...list]..sort((a, b) => b.total.compareTo(a.total));
+    final sorted = [...list]..sort((a, b) => b.start.compareTo(a.start));
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
       itemCount: sorted.length,
@@ -320,12 +322,16 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
       final key = _groupKey(c, group);
       buckets.putIfAbsent(key, () => []).add(c);
     }
-    final entries = buckets.entries.toList()
-      ..sort((a, b) {
+    final entries = buckets.entries.toList();
+    if (group == ConnGroup.time) {
+      entries.sort((a, b) => b.key.compareTo(a.key));
+    } else {
+      entries.sort((a, b) {
         final ta = a.value.fold<int>(0, (p, c) => p + c.total);
         final tb = b.value.fold<int>(0, (p, c) => p + c.total);
         return tb.compareTo(ta);
       });
+    }
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
@@ -407,6 +413,11 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
       ConnGroup.outbound =>
         c.chains.isEmpty ? 'DIRECT' : c.chains.first,
       ConnGroup.type => c.type.isEmpty ? '未知' : c.type,
+      ConnGroup.time => () {
+          final h = c.start.hour.toString().padLeft(2, '0');
+          final m = c.start.minute.toString().padLeft(2, '0');
+          return '$h:$m';
+        }(),
       ConnGroup.none => '',
     };
   }
@@ -634,134 +645,269 @@ class _ConnTile extends StatelessWidget {
     };
   }
 
+  String _time(DateTime d) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = surfacesOf(context);
-    final enabled = [
-      for (final f in ConnField.values)
-        if (fields.contains(f.id) && (_value(f)?.isNotEmpty ?? false)) f,
-    ];
-    final primary = enabled.isNotEmpty ? enabled.first : ConnField.host;
+    final dur = DateTime.now().difference(conn.start);
+
+    Widget line(String label, String? value, {bool strong = false}) {
+      if (value == null || value.isEmpty) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 3),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 34,
+              child: Text(label,
+                  style: TextStyle(color: s.textTertiary, fontSize: 9.5)),
+            ),
+            Expanded(
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: strong ? s.textPrimary : s.textSecondary,
+                  fontSize: strong ? 11.5 : 11,
+                  fontWeight: strong ? FontWeight.w700 : FontWeight.w400,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return JellyPress(
       onTap: () => _showDetail(context),
       scaleTo: 0.98,
       child: GlimpseCard(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
+        child: IntrinsicHeight(
+          child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
+            // 左侧：类型 / 域名 / 链路 / 规则
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  line('类型', conn.type, strong: true),
+                  line('域名', conn.host.isEmpty ? conn.destinationIP : conn.host),
+                  line('链路', conn.chainText),
+                  line('规则', conn.rulePayload.isEmpty
+                      ? conn.rule
+                      : '${conn.rule} · ${conn.rulePayload}'),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            // 右侧：流量 / 时间 / 时长
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Expanded(
-                  child: Text(
-                    _value(primary) ?? '—',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: s.textPrimary,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700),
+                Text(
+                  '↑${fmtBytes(conn.upload)}  ↓${fmtBytes(conn.download)}',
+                  style: TextStyle(
+                    color: s.textPrimary,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
-                const SizedBox(width: 8),
-                if (speed > 0)
-                  Text(
-                    fmtSpeed(speed),
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      fontFeatures: [FontFeature.tabularFigures()],
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 7),
-            Wrap(
-              spacing: 12,
-              runSpacing: 5,
-              children: [
-                for (final f in enabled.skip(1))
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('${f.label} ',
-                          style: TextStyle(
-                              color: s.textTertiary, fontSize: 10.5)),
-                      Text(
-                        _value(f) ?? '',
-                        style: TextStyle(
-                          color: s.textSecondary,
-                          fontSize: 10.5,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ],
-                  ),
+                if (fields.contains(ConnField.connectTime.id)) ...[
+                  const SizedBox(height: 4),
+                  Text(fmtDuration(dur),
+                      style: TextStyle(
+                          color: s.textTertiary,
+                          fontSize: 10,
+                          fontFeatures: const [FontFeature.tabularFigures()])),
+                ],
+                const Spacer(),
+                Text(_time(conn.start),
+                    style: TextStyle(
+                        color: s.textTertiary,
+                        fontSize: 10,
+                        fontFeatures: const [FontFeature.tabularFigures()])),
               ],
             ),
           ],
+          ),
         ),
       ),
     );
   }
 
+  Map<String, dynamic> _raw() => {
+        'id': conn.id,
+        'host': conn.host,
+        'destinationIP': conn.destinationIP,
+        'destinationPort': conn.destinationPort,
+        'sourceIP': conn.sourceIP,
+        'sourcePort': conn.sourcePort,
+        'network': conn.network,
+        'type': conn.type,
+        'rule': conn.rule,
+        'rulePayload': conn.rulePayload,
+        'chains': conn.chains,
+        'processPath': conn.processPath,
+        'sniffHost': conn.sniffHost,
+        'upload': conn.upload,
+        'download': conn.download,
+        'start': conn.start.toIso8601String(),
+      };
+
   void _showDetail(BuildContext context) {
     final s = surfacesOf(context);
+    var showRaw = false;
+
     showJellyDialog<void>(
       context: context,
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text('连接详情',
-                        style: TextStyle(
-                            color: s.textPrimary,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700)),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setState) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 520),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('连接详情',
+                          style: TextStyle(
+                              color: s.textPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Icon(Icons.close_rounded,
+                          size: 20, color: s.textTertiary),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    _DetailTab(
+                      label: '字段',
+                      active: !showRaw,
+                      onTap: () => setState(() => showRaw = false),
+                    ),
+                    const SizedBox(width: 8),
+                    _DetailTab(
+                      label: '原始数据',
+                      active: showRaw,
+                      onTap: () => setState(() => showRaw = true),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: showRaw
+                        ? Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: s.inset,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: SelectableText(
+                              const JsonEncoder.withIndent('  ')
+                                  .convert(_raw()),
+                              style: TextStyle(
+                                color: s.textSecondary,
+                                fontSize: 11,
+                                height: 1.45,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              for (final f in ConnField.values)
+                                if ((_value(f)?.isNotEmpty ?? false))
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 9),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        SizedBox(
+                                          width: 78,
+                                          child: Text(f.label,
+                                              style: TextStyle(
+                                                  color: s.textTertiary,
+                                                  fontSize: 12)),
+                                        ),
+                                        Expanded(
+                                          child: Text(_value(f)!,
+                                              style: TextStyle(
+                                                  color: s.textPrimary,
+                                                  fontSize: 12.5)),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                            ],
+                          ),
                   ),
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
-                    child: Icon(Icons.close_rounded,
-                        size: 20, color: s.textTertiary),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              ...ConnField.values.map((f) {
-                final v = _value(f);
-                if (v == null || v.isEmpty) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 9),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 78,
-                        child: Text(f.label,
-                            style: TextStyle(
-                                color: s.textTertiary, fontSize: 12)),
-                      ),
-                      Expanded(
-                        child: Text(v,
-                            style: TextStyle(
-                                color: s.textPrimary, fontSize: 12.5)),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 }
+
+/// 详情弹窗顶部的小标签
+class _DetailTab extends StatelessWidget {
+  const _DetailTab({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = surfacesOf(context);
+    final cs = Theme.of(context).colorScheme;
+    return JellyPress(
+      haptic: false,
+      onTap: onTap,
+      scaleTo: 0.94,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? cs.primary.withValues(alpha: 0.16) : s.block,
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? cs.primary : s.textSecondary,
+            fontSize: 11.5,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+}
+

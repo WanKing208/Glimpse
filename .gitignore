@@ -18,10 +18,11 @@ android/key.properties
 
 # 本地产物
 *.apk
-!dist/*.apk
 *.aab
 *.hap
 
 # JVM 崩溃日志
 hs_err_pid*.log
 core.*
+
+dist/

@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/jelly.dart';
+import '../core/logo_cache.dart';
 import '../data/providers.dart';
 import '../core/theme.dart';
 
@@ -444,5 +445,27 @@ class PageHeader extends ConsumerWidget {
         ],
       ),
     );
+  }
+}
+
+
+/// 分组 / 规则目标的 logo（优先用配置里的 icon，没有则用图标占位）
+class ProxyLogo extends StatelessWidget {
+  const ProxyLogo({super.key, required this.proxy, this.size = 30});
+
+  final dynamic proxy;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final String? icon = proxy?.icon as String?;
+    final fallback = CookieBadge(
+      icon: Icons.layers_rounded,
+      size: size,
+      color: cs.primary.withValues(alpha: 0.12),
+    );
+    if (icon == null || icon.isEmpty) return fallback;
+    return CachedLogo(url: icon, size: size, fallback: fallback);
   }
 }

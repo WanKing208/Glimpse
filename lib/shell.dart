@@ -194,9 +194,9 @@ class _HomeShellState extends ConsumerState<HomeShell>
                 animation: _anim,
                 builder: (context, child) {
                   final t = _anim.value.clamp(0.0, 1.0);
-                  // easeOutBack 让缩放略微过冲，再回到 1.0，形成回弹
-                  final e = Curves.easeOutBack.transform(t);
-                  final scale = 1.045 - 0.045 * e;
+                  // 弹性曲线：先放大再回弹，和底栏的手感一致
+                  final e = Curves.elasticOut.transform(t);
+                  final scale = 1 + 0.055 * (1 - e);
                   return Opacity(
                     opacity: 0.72 + 0.28 * Curves.easeOutCubic.transform(t),
                     child: Transform.scale(scale: scale, child: child),

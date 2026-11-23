@@ -219,15 +219,17 @@ class _RulesList extends ConsumerWidget {
                     ),
                     child: Row(
                       children: [
-                        // 序号（用数字直观表示第几条）
+                        // 规则目标（代理组）的 logo，取配置里的 icon
+                        _RuleLogo(proxyName: r.proxy),
+                        const SizedBox(width: 6),
                         SizedBox(
-                          width: 26,
+                          width: 22,
                           child: Text(
                             '${r.index + 1}',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: s.textTertiary,
-                              fontSize: 10.5,
+                              fontSize: 10,
                               fontWeight: FontWeight.w700,
                               fontFeatures: const [
                                 FontFeature.tabularFigures()
@@ -235,7 +237,7 @@ class _RulesList extends ConsumerWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 4),
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 7, vertical: 3),
@@ -463,5 +465,43 @@ class _RuleProviders extends ConsumerWidget {
         );
       },
     );
+  }
+}
+
+/// 规则目标（代理组）的 logo：优先取配置文件里的 icon
+class _RuleLogo extends ConsumerWidget {
+  const _RuleLogo({required this.proxyName});
+
+  final String proxyName;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final proxies = ref.watch(proxiesProvider).value ?? const {};
+    final proxy = proxies[proxyName];
+    const size = 26.0;
+
+    if (proxy == null) {
+      // 直连 / 拒绝 / 未加载时用图标占位
+      final up = proxyName.toUpperCase();
+      final isDirect = up == 'DIRECT';
+      final isReject = up == 'REJECT';
+      return CookieBadge(
+        icon: isDirect
+            ? Icons.check_circle_outline_rounded
+            : isReject
+                ? Icons.block_rounded
+                : Icons.swap_horiz_rounded,
+        size: size,
+        color: (isDirect
+                ? const Color(0xFF30A46C)
+                : isReject
+                    ? const Color(0xFFE5484D)
+                    : cs.primary)
+            .withValues(alpha: 0.14),
+      );
+    }
+
+    return ProxyLogo(proxy: proxy, size: size);
   }
 }

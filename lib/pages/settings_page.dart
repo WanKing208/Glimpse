@@ -99,6 +99,33 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ),
             const _ToneRow(),
           ]),
+          _Block(title: '节点卡', children: [
+            _SliderRow(
+              title: '字号',
+              value: st.nodeFontSize,
+              min: 10,
+              max: 15,
+              suffix: '',
+              onChanged: (v) =>
+                  notifier.patch((x) => x.copyWith(nodeFontSize: v)),
+            ),
+            _SliderRow(
+              title: '上下间距',
+              value: st.nodeGap,
+              min: 2,
+              max: 12,
+              suffix: 'dp',
+              onChanged: (v) => notifier.patch((x) => x.copyWith(nodeGap: v)),
+            ),
+            _SliderRow(
+              title: '内部留白',
+              value: st.nodePadV,
+              min: 4,
+              max: 16,
+              suffix: 'dp',
+              onChanged: (v) => notifier.patch((x) => x.copyWith(nodePadV: v)),
+            ),
+          ]),
           _Block(title: tr('圆角'), children: [
             _SliderRow(
               title: tr('分组圆角'),
