@@ -261,8 +261,9 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
       height: 38,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: s.block,
+        color: s.card,
         borderRadius: BorderRadius.circular(Radii.pill),
+        border: Border.all(color: s.hairline.withValues(alpha: 0.5), width: 0.6),
       ),
       child: Row(
         children: [
@@ -686,7 +687,7 @@ class _ConnTile extends StatelessWidget {
 
     return JellyPress(
       onTap: () => _showDetail(context),
-      scaleTo: 0.98,
+      scaleTo: 0.95,
       child: GlimpseCard(
         padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
         child: IntrinsicHeight(

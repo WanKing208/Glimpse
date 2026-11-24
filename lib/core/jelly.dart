@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/physics.dart';
 import 'package:material_ui/material_ui.dart';
@@ -376,6 +377,12 @@ Future<T?> showExpandingSheet<T>({
   required Rect origin,
   required WidgetBuilder builder,
   double heightFactor = 0.56,
+  double panelOpacity = 1.0,
+  bool glass = false,
+  double blur = 16,
+  Duration duration = const Duration(milliseconds: 320),
+  Duration reverseDuration = const Duration(milliseconds: 240),
+  double originRadius = 18,
 }) {
   final screen = MediaQuery.of(context).size;
   final panelW = screen.width - 64;
@@ -388,14 +395,16 @@ Future<T?> showExpandingSheet<T>({
     panelH,
   );
 
-  return showGeneralDialog<T>(
-    context: context,
+  return Navigator.of(context, rootNavigator: true).push<T>(
+    PageRouteBuilder<T>(
+    opaque: false,
     barrierDismissible: true,
     barrierLabel: '关闭',
     barrierColor: Colors.black.withValues(alpha: 0.38),
-    transitionDuration: const Duration(milliseconds: 380),
+    transitionDuration: duration,
+    reverseTransitionDuration: reverseDuration,
     pageBuilder: (ctx, animation, secondary) => const SizedBox.shrink(),
-    transitionBuilder: (ctx, animation, secondary, child) {
+    transitionsBuilder: (ctx, animation, secondary, child) {
       final curved = CurvedAnimation(
         parent: animation,
         curve: Curves.easeOutCubic,
@@ -406,31 +415,39 @@ Future<T?> showExpandingSheet<T>({
         builder: (ctx, _) {
           final t = curved.value.clamp(0.0, 1.0);
           final rect = Rect.lerp(origin, endRect, t)!;
-          final radius =
-              ui.lerpDouble(origin.width * 0.2, Radii.sheet, t)!;
+          // 从卡片本身的圆角开始，收回时形状和卡片一致（不再变成椭圆）
+          final radius = ui.lerpDouble(originRadius, Radii.sheet, t)!;
           return Stack(
             children: [
               Positioned.fromRect(
                 rect: rect,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(radius),
-                  child: Material(
-                    // 不跟随「界面不透明度」，保证内容清晰可读
-                    color: Color.alphaBlend(
-                      surfacesOf(ctx).card.withValues(alpha: 1),
-                      surfacesOf(ctx).page.withValues(alpha: 1),
-                    ),
-                    child: OverflowBox(
+                  child: Builder(
+                    builder: (ctx2) {
+                      final content = OverflowBox(
                       alignment: Alignment.topCenter,
                       minWidth: endRect.width,
                       maxWidth: endRect.width,
                       minHeight: endRect.height,
                       maxHeight: endRect.height,
-                      child: Opacity(
-                        opacity: ((t - 0.2) / 0.8).clamp(0.0, 1.0),
-                        child: builder(ctx),
-                      ),
-                    ),
+                        child: Opacity(
+                          opacity: ((t - 0.2) / 0.8).clamp(0.0, 1.0),
+                          child: builder(ctx2),
+                        ),
+                      );
+                      final material = Material(
+                        color: surfacesOf(ctx2).card.withValues(
+                          alpha: panelOpacity.clamp(0.35, 1.0),
+                        ),
+                        child: content,
+                      );
+                      if (!glass) return material;
+                      return BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                        child: material,
+                      );
+                    },
                   ),
                 ),
               ),
@@ -440,6 +457,7 @@ Future<T?> showExpandingSheet<T>({
         child: const SizedBox.shrink(),
       );
     },
+  ),
   );
 }
 

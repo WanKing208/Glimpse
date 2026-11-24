@@ -99,33 +99,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ),
             const _ToneRow(),
           ]),
-          _Block(title: '节点卡', children: [
-            _SliderRow(
-              title: '字号',
-              value: st.nodeFontSize,
-              min: 10,
-              max: 15,
-              suffix: '',
-              onChanged: (v) =>
-                  notifier.patch((x) => x.copyWith(nodeFontSize: v)),
-            ),
-            _SliderRow(
-              title: '上下间距',
-              value: st.nodeGap,
-              min: 2,
-              max: 12,
-              suffix: 'dp',
-              onChanged: (v) => notifier.patch((x) => x.copyWith(nodeGap: v)),
-            ),
-            _SliderRow(
-              title: '内部留白',
-              value: st.nodePadV,
-              min: 4,
-              max: 16,
-              suffix: 'dp',
-              onChanged: (v) => notifier.patch((x) => x.copyWith(nodePadV: v)),
-            ),
-          ]),
           _Block(title: tr('圆角'), children: [
             _SliderRow(
               title: tr('分组圆角'),
@@ -155,6 +128,33 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   notifier.patch((x) => x.copyWith(proxyLogoSize: v)),
             ),
           ]),
+          _Block(title: '节点外观', children: [
+            _SliderRow(
+              title: '字号',
+              value: st.nodeFontSize,
+              min: 10,
+              max: 15,
+              suffix: '',
+              onChanged: (v) =>
+                  notifier.patch((x) => x.copyWith(nodeFontSize: v)),
+            ),
+            _SliderRow(
+              title: '上下间距',
+              value: st.nodeGap,
+              min: 2,
+              max: 12,
+              suffix: 'dp',
+              onChanged: (v) => notifier.patch((x) => x.copyWith(nodeGap: v)),
+            ),
+            _SliderRow(
+              title: '内部留白',
+              value: st.nodePadV,
+              min: 4,
+              max: 16,
+              suffix: 'dp',
+              onChanged: (v) => notifier.patch((x) => x.copyWith(nodePadV: v)),
+            ),
+          ]),
           _Block(title: tr('界面'), children: [
             _SliderRow(
               title: tr('不透明度'),
@@ -167,11 +167,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   notifier.patch((x) => x.copyWith(surfaceOpacity: v)),
             ),
             _SwitchRow(
-              title: tr('界面磨砂'),
-              value: st.surfaceBlur,
+              title: '悬浮窗磨砂',
+              value: st.sheetGlass,
               onChanged: (v) =>
-                  notifier.patch((x) => x.copyWith(surfaceBlur: v)),
+                  notifier.patch((x) => x.copyWith(sheetGlass: v)),
             ),
+            if (st.sheetGlass)
+              _SliderRow(
+                title: '磨砂强度',
+                value: st.sheetBlur,
+                min: 4,
+                max: 32,
+                suffix: '',
+                onChanged: (v) =>
+                    notifier.patch((x) => x.copyWith(sheetBlur: v)),
+              ),
           ]),
           _Block(title: tr('底栏'), children: [
             _SliderRow(
@@ -563,8 +573,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             height: 40,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              color: s.block,
+              color: s.card,
               borderRadius: BorderRadius.circular(Radii.pill),
+              border: Border.all(
+                  color: s.hairline.withValues(alpha: 0.5), width: 0.6),
             ),
             child: Row(
               children: [
@@ -1392,7 +1404,7 @@ class _Row extends StatelessWidget {
     return JellyPress(
       haptic: false,
       onTap: onTap,
-      scaleTo: 0.99,
+      scaleTo: 0.96,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         child: Row(

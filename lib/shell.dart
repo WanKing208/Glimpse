@@ -64,7 +64,7 @@ class _HomeShellState extends ConsumerState<HomeShell>
     with SingleTickerProviderStateMixin {
   late final AnimationController _anim = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 320),
+    duration: const Duration(milliseconds: 460),
     value: 1,
   );
 
@@ -175,11 +175,6 @@ class _HomeShellState extends ConsumerState<HomeShell>
                     alpha: settings.backgroundDim.clamp(0.0, 0.8)),
               ),
             ],
-            if (settings.surfaceBlur && background != null)
-              BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                child: Container(color: Colors.transparent),
-              ),
             GestureDetector(
               behavior: HitTestBehavior.translucent,
               onHorizontalDragEnd: (d) {
@@ -196,7 +191,7 @@ class _HomeShellState extends ConsumerState<HomeShell>
                   final t = _anim.value.clamp(0.0, 1.0);
                   // 弹性曲线：先放大再回弹，和底栏的手感一致
                   final e = Curves.elasticOut.transform(t);
-                  final scale = 1 + 0.055 * (1 - e);
+                  final scale = 1 + 0.04 * (1 - e);
                   return Opacity(
                     opacity: 0.72 + 0.28 * Curves.easeOutCubic.transform(t),
                     child: Transform.scale(scale: scale, child: child),
@@ -368,20 +363,59 @@ class _FloatingNavBarState extends State<_FloatingNavBar>
       ),
     );
 
+    Widget barWithGlass = bar;
     if (widget.glass) {
-      bar = BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+      barWithGlass = BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: bar,
       );
     }
 
-    return RepaintBoundary(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottom * 0.5),
+    final dock = Padding(
+      padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottom * 0.5),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: barWithGlass,
+      ),
+    );
+
+    if (!widget.glass) return RepaintBoundary(child: dock);
+
+    // 底栏上方 18px 过渡：内容滚到这里先被模糊，不直接压到底栏下
+    final tint = (dark ? s.card : Colors.white);
+    final apron = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        height: 18,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(radius),
-          child: bar,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(radius + 8),
+          ),
+          child: ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      tint.withValues(alpha: 0),
+                      tint.withValues(alpha: opacity * 0.85),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
+      ),
+    );
+
+    return RepaintBoundary(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [apron, dock],
       ),
     );
   }

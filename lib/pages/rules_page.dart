@@ -76,8 +76,11 @@ class _RulesPageState extends ConsumerState<RulesPage>
                     padding:
                         const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
                     decoration: BoxDecoration(
-                      color: s.block,
+                      color: s.card,
                       borderRadius: BorderRadius.circular(11),
+                      border: Border.all(
+                          color: s.hairline.withValues(alpha: 0.5),
+                          width: 0.6),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -113,8 +116,11 @@ class _RulesPageState extends ConsumerState<RulesPage>
                     height: 38,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: s.block,
+                      color: s.card,
                       borderRadius: BorderRadius.circular(Radii.pill),
+                      border: Border.all(
+                          color: s.hairline.withValues(alpha: 0.5),
+                          width: 0.6),
                     ),
                     child: Row(
                       children: [

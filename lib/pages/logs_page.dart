@@ -92,8 +92,11 @@ class _LogsPageState extends ConsumerState<LogsPage> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 11, vertical: 8),
                     decoration: BoxDecoration(
-                      color: s.block,
+                      color: s.card,
                       borderRadius: BorderRadius.circular(11),
+                      border: Border.all(
+                          color: s.hairline.withValues(alpha: 0.5),
+                          width: 0.6),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -132,8 +135,11 @@ class _LogsPageState extends ConsumerState<LogsPage> {
                     decoration: BoxDecoration(
                       color: state.paused
                           ? const Color(0xFFF76B15).withValues(alpha: 0.16)
-                          : s.block,
+                          : s.card,
                       borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: s.hairline.withValues(alpha: 0.5),
+                          width: 0.6),
                     ),
                     child: Icon(
                       state.paused
@@ -154,8 +160,11 @@ class _LogsPageState extends ConsumerState<LogsPage> {
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      color: s.block,
+                      color: s.card,
                       borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: s.hairline.withValues(alpha: 0.5),
+                          width: 0.6),
                     ),
                     child: Icon(Icons.delete_outline_rounded,
                         size: 17, color: s.textSecondary),
@@ -167,8 +176,11 @@ class _LogsPageState extends ConsumerState<LogsPage> {
                     height: 38,
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     decoration: BoxDecoration(
-                      color: s.block,
+                      color: s.card,
                       borderRadius: BorderRadius.circular(Radii.pill),
+                      border: Border.all(
+                          color: s.hairline.withValues(alpha: 0.5),
+                          width: 0.6),
                     ),
                     child: Row(
                       children: [

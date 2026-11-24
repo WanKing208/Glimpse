@@ -252,8 +252,9 @@ class _ProxiesPageState extends ConsumerState<ProxiesPage> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(
-            color: s.block,
+            color: s.card,
             borderRadius: BorderRadius.circular(11),
+            border: Border.all(color: s.hairline.withValues(alpha: 0.5), width: 0.6),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -407,6 +408,13 @@ class _ProxiesPageState extends ConsumerState<ProxiesPage> {
       context: context,
       origin: origin,
       heightFactor: _sheetHeightFactor(context, settings, count),
+      panelOpacity: settings.sheetGlass
+          ? settings.surfaceOpacity.clamp(0.5, 1.0)
+          : 1.0,
+      glass: settings.sheetGlass,
+      blur: settings.sheetBlur,
+      originRadius: settings.cardRadius,
+      reverseDuration: const Duration(milliseconds: 260),
       builder: (_) => _GroupNodesSheet(groupName: name),
     );
   }
@@ -591,8 +599,9 @@ class _ProxiesPageState extends ConsumerState<ProxiesPage> {
       height: 38,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: s.block,
+        color: s.card,
         borderRadius: BorderRadius.circular(Radii.pill),
+        border: Border.all(color: s.hairline.withValues(alpha: 0.5), width: 0.6),
       ),
       child: Row(
         children: [
@@ -654,8 +663,9 @@ class _LayoutToggle extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
         decoration: BoxDecoration(
-          color: s.block,
+          color: s.card,
           borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: s.hairline.withValues(alpha: 0.5), width: 0.6),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -742,7 +752,7 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
         final r = _rectOf();
         if (r != null) widget.onTap(r);
       },
-      scaleTo: 0.97,
+      scaleTo: 0.89,
       child: Container(
         padding: EdgeInsets.fromLTRB(
           compact ? 12 : 16,
@@ -1178,16 +1188,16 @@ class _ProvidersView extends ConsumerWidget {
   }
 }
 
-class _ProviderCard extends StatefulWidget {
+class _ProviderCard extends ConsumerStatefulWidget {
   const _ProviderCard({required this.provider});
 
   final ProviderInfo provider;
 
   @override
-  State<_ProviderCard> createState() => _ProviderCardState();
+  ConsumerState<_ProviderCard> createState() => _ProviderCardState();
 }
 
-class _ProviderCardState extends State<_ProviderCard> {
+class _ProviderCardState extends ConsumerState<_ProviderCard> {
   final GlobalKey _key = GlobalKey();
 
   void _open(BuildContext context) {
@@ -1195,10 +1205,17 @@ class _ProviderCardState extends State<_ProviderCard> {
     final rect = box == null || !box.hasSize
         ? Rect.fromLTWH(16, 300, 320, 120)
         : (box.localToGlobal(Offset.zero) & box.size);
+    final st = ref.read(settingsProvider);
     showExpandingSheet<void>(
       context: context,
       origin: rect,
       heightFactor: 0.52,
+      panelOpacity:
+          st.sheetGlass ? st.surfaceOpacity.clamp(0.5, 1.0) : 1.0,
+      glass: st.sheetGlass,
+      blur: st.sheetBlur,
+      originRadius: 18,
+      reverseDuration: const Duration(milliseconds: 180),
       builder: (_) => _ProviderNodesSheet(provider: widget.provider),
     );
   }
@@ -1255,7 +1272,7 @@ class _ProviderCardState extends State<_ProviderCard> {
     return JellyPress(
       key: _key,
       onTap: () => _open(context),
-      scaleTo: 0.98,
+      scaleTo: 0.94,
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
         decoration: BoxDecoration(

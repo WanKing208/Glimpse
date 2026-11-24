@@ -98,7 +98,8 @@ class Settings {
     this.chartUpColor = 0xFF007AFF,
     this.chartDownColor = 0xFF34C759,
     this.surfaceOpacity = 1.0,
-    this.surfaceBlur = false,
+    this.sheetGlass = true,
+    this.sheetBlur = 18.0,
     this.bgBlur = 0.0,
     this.fontFamily = 'system',
     this.haptics = true,
@@ -218,8 +219,11 @@ class Settings {
 
   /// 界面整体不透明度（卡片/页面）
   final double surfaceOpacity;
-  /// 界面磨砂（背景与卡片之间加模糊层）
-  final bool surfaceBlur;
+  /// 悬浮窗磨砂
+  final bool sheetGlass;
+
+  /// 悬浮窗磨砂强度（模糊半径）
+  final double sheetBlur;
   /// 背景图模糊半径
   final double bgBlur;
   /// 字体：system / serif / mono
@@ -262,7 +266,8 @@ class Settings {
     int? chartUpColor,
     int? chartDownColor,
     double? surfaceOpacity,
-    bool? surfaceBlur,
+    bool? sheetGlass,
+    double? sheetBlur,
     double? bgBlur,
     String? fontFamily,
     bool? haptics,
@@ -316,7 +321,8 @@ class Settings {
       chartUpColor: chartUpColor ?? this.chartUpColor,
       chartDownColor: chartDownColor ?? this.chartDownColor,
       surfaceOpacity: surfaceOpacity ?? this.surfaceOpacity,
-      surfaceBlur: surfaceBlur ?? this.surfaceBlur,
+      sheetGlass: sheetGlass ?? this.sheetGlass,
+      sheetBlur: sheetBlur ?? this.sheetBlur,
       bgBlur: bgBlur ?? this.bgBlur,
       fontFamily: fontFamily ?? this.fontFamily,
       haptics: haptics ?? this.haptics,
@@ -406,7 +412,8 @@ class SettingsNotifier extends Notifier<Settings> {
       chartUpColor: prefs.getInt('${_kPrefix}chartUp') ?? 0xFF007AFF,
       chartDownColor: prefs.getInt('${_kPrefix}chartDown') ?? 0xFF34C759,
       surfaceOpacity: prefs.getDouble('${_kPrefix}surfOpacity') ?? 1.0,
-      surfaceBlur: prefs.getBool('${_kPrefix}surfBlur') ?? false,
+      sheetGlass: prefs.getBool('${_kPrefix}sheetGlass') ?? true,
+      sheetBlur: prefs.getDouble('${_kPrefix}sheetBlur') ?? 18.0,
       bgBlur: prefs.getDouble('${_kPrefix}bgBlur') ?? 0.0,
       fontFamily: prefs.getString('${_kPrefix}font') ?? 'system',
       haptics: prefs.getBool('${_kPrefix}haptics') ?? true,
@@ -486,7 +493,8 @@ class SettingsNotifier extends Notifier<Settings> {
     prefs.setInt('${_kPrefix}chartUp', s.chartUpColor);
     prefs.setInt('${_kPrefix}chartDown', s.chartDownColor);
     prefs.setDouble('${_kPrefix}surfOpacity', s.surfaceOpacity);
-    prefs.setBool('${_kPrefix}surfBlur', s.surfaceBlur);
+    prefs.setBool('${_kPrefix}sheetGlass', s.sheetGlass);
+    prefs.setDouble('${_kPrefix}sheetBlur', s.sheetBlur);
     prefs.setDouble('${_kPrefix}bgBlur', s.bgBlur);
     prefs.setString('${_kPrefix}font', s.fontFamily);
     prefs.setBool('${_kPrefix}haptics', s.haptics);
