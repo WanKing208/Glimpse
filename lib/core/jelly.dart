@@ -115,7 +115,16 @@ class _JellyPressState extends State<JellyPress>
           }
         },
         onTapCancel: _up,
-        onLongPress: widget.onLongPress,
+        onLongPress: widget.onLongPress == null
+            ? null
+            : () {
+                if (widget.haptic &&
+                    kHapticsEnabled.value &&
+                    level != MotionLevel.off) {
+                  HapticFeedback.mediumImpact();
+                }
+                widget.onLongPress!();
+              },
         child: AnimatedBuilder(
           animation: _c,
           builder: (context, child) {
@@ -327,6 +336,7 @@ Future<T?> showJellyDialog<T>({
   required WidgetBuilder builder,
   bool barrierDismissible = true,
   double maxWidth = 360,
+  bool opaque = true,
 }) {
   return showGeneralDialog<T>(
     context: context,
@@ -355,7 +365,8 @@ Future<T?> showJellyDialog<T>({
                         MediaQuery.of(ctx).size.height * 0.72,
                   ),
                   child: Material(
-                    color: s.card,
+                    // 默认不透明，避免背景透过来看不清内容
+                    color: opaque ? s.card.withValues(alpha: 1) : s.card,
                     borderRadius: BorderRadius.circular(24),
                     clipBehavior: Clip.antiAlias,
                     child: builder(ctx),

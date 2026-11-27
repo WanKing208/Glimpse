@@ -10,6 +10,7 @@ import '../core/logo_cache.dart';
 import '../core/ordering.dart';
 import '../core/i18n.dart';
 import '../core/theme.dart';
+import '../data/client.dart';
 import '../data/models.dart';
 import '../data/providers.dart';
 import '../widgets/common.dart';
@@ -75,8 +76,18 @@ class _ProxiesPageState extends ConsumerState<ProxiesPage> {
     if (settings.demoMode) {
       delay = await ref.read(demoProvider).testDelay(node.name);
     } else {
-      delay =
-          await ref.read(clientProvider)?.testDelay(node.name, url: _testUrl);
+      final client = ref.read(clientProvider);
+      delay = await client?.testDelay(node.name, url: _testUrl);
+      if (delay == null || delay <= 0) {
+        final providers = ref.read(providersProvider).value ?? const {};
+        for (final e in providers.entries) {
+          if (e.value.proxies.any((p) => p.name == node.name)) {
+            final bulk = await client?.testProviderAll(e.key, url: _testUrl);
+            delay = bulk?[node.name];
+            break;
+          }
+        }
+      }
     }
     ref.read(testingProvider.notifier).remove(node.name);
     if (delay != null) {
@@ -752,6 +763,7 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
         final r = _rectOf();
         if (r != null) widget.onTap(r);
       },
+      onLongPress: _testGroup,
       scaleTo: 0.89,
       child: Container(
         padding: EdgeInsets.fromLTRB(
@@ -837,7 +849,7 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
                     child: CircularProgressIndicator(strokeWidth: 1.8),
                   )
                 else
-                  _MiniDelay(delay, onTap: _testGroup, size: 14),
+                  _MiniDelay(delay, onTap: _testGroup, size: 15.5),
               ],
             ),
           ],
@@ -869,8 +881,13 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
     }
 
     setState(() => _testing = true);
+    // 安全兜底：极端情况下（请求悬挂）40 秒后强制收起转圈
+    Future.delayed(const Duration(seconds: 40), () {
+      if (mounted && _testing) setState(() => _testing = false);
+    });
     var result = <String, int>{};
     try {
+      try {
       result = await client.testGroupDelay(widget.group.name, url: url);
     } catch (_) {
       result = {};
@@ -907,7 +924,28 @@ class _GroupCardState extends ConsumerState<_GroupCard> {
     for (final e in result.entries) {
       ref.read(delayOverridesProvider.notifier).set(e.key, e.value);
     }
-    setState(() => _testing = false);
+
+    // IPv6 测试：和 zashboard 一样，用同一个整组接口换 IPv6 地址再测一次
+    if (settings.ipv6Test) {
+      try {
+        final v6 = await client.testGroupDelay(
+          widget.group.name,
+          url: kIpv6TestUrl,
+          timeout: 5000,
+        );
+        for (final e in result.entries) {
+          ref
+              .read(ipv6SupportProvider.notifier)
+              .set(e.key, (v6[e.key] ?? 0) > 0);
+        }
+      } catch (_) {}
+    }
+    } catch (_) {
+      // 忽略，finally 里一定会复位
+    } finally {
+      // 无论成功/失败/超时，都结束转圈，避免卡住只能重启
+      if (mounted) setState(() => _testing = false);
+    }
   }
 }
 
@@ -1424,9 +1462,16 @@ class _ProviderNodesSheetState extends ConsumerState<_ProviderNodesSheet> {
   Map<String, MihomoProxy> get _proxies =>
       ref.read(proxiesProvider).value ?? const {};
   final Map<String, int?> _delays = {};
+  final Set<String> _busy = {};
   bool _testing = false;
 
-  List<MihomoProxy> get _nodes => widget.provider.proxies;
+  List<MihomoProxy> get _nodes {
+    final list = widget.provider.proxies;
+    if (!ref.watch(settingsProvider).hideTimeout) return list;
+    return list
+        .where((n) => (effectiveDelay(n, _proxies, _delays) ?? 0) > 0)
+        .toList();
+  }
 
   Future<void> _testAll() async {
     if (_testing || _nodes.isEmpty) return;
@@ -1447,6 +1492,20 @@ class _ProviderNodesSheetState extends ConsumerState<_ProviderNodesSheet> {
         _delays.addAll(result);
         _testing = false;
       });
+      if (ref.read(settingsProvider).ipv6Test && client != null) {
+        try {
+          final v6 = await client.testProviderAll(
+            widget.provider.name,
+            url: kIpv6TestUrl,
+            timeout: 5000,
+          );
+          for (final n in widget.provider.proxies) {
+            ref
+                .read(ipv6SupportProvider.notifier)
+                .set(n.name, (v6[n.name] ?? 0) > 0);
+          }
+        } catch (_) {}
+      }
     }
   }
 
@@ -1476,14 +1535,15 @@ class _ProviderNodesSheetState extends ConsumerState<_ProviderNodesSheet> {
       final delay = effectiveDelay(n, _proxies, _delays);
       final st = ref.watch(settingsProvider);
       return Padding(
-        padding: EdgeInsets.only(bottom: st.nodeGap),
+        padding: const EdgeInsets.only(bottom: 0),
         child: JellyPress(
           haptic: false,
           onTap: () => _testOne(n),
           scaleTo: 0.98,
           child: Container(
             padding:
-                EdgeInsets.symmetric(horizontal: 10, vertical: st.nodePadV),
+                EdgeInsets.symmetric(
+                    horizontal: 10, vertical: st.nodePadV * st.nodeScale),
             decoration: BoxDecoration(
               color: s.inset,
               borderRadius: BorderRadius.circular(
@@ -1492,41 +1552,60 @@ class _ProviderNodesSheetState extends ConsumerState<_ProviderNodesSheet> {
                   color: s.hairline.withValues(alpha: 0.22),
                   width: 0.5),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(n.name,
+                Text(n.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: s.textPrimary,
+                        fontSize: st.nodeFontSize,
+                        fontWeight: FontWeight.w600)),
+                const Spacer(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          nodeSubtitle(n).replaceAll(' / ', '·') +
+                            (supportsV6(
+                                    n,
+                                    ref.watch(ipv6SupportProvider),
+                                    ref.watch(settingsProvider).ipv6Test)
+                                ? '·ipv6'
+                                : ''),
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
                           style: TextStyle(
-                              color: s.textPrimary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 3),
-                      Text(
-                        nodeSubtitle(n),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: s.textTertiary,
-                            fontSize: 9.5,
-                            height: 1.1),
+                              color: s.textTertiary,
+                              fontSize: 9.5,
+                              height: 1.1),
+                        ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 6),
-                delay == null
-                    ? JellyPress(
+                    ),
+
+                    if ((_testing && !_delays.containsKey(n.name)) ||
+                        _busy.contains(n.name))
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 1.6),
+                      )
+                    else if (delay == null)
+                      JellyPress(
                         haptic: false,
                         onTap: () => _testOne(n),
                         child: Icon(Icons.timer_outlined,
                             size: 14, color: s.textTertiary),
                       )
-                    : _MiniDelay(delay),
+                    else
+                      _MiniDelay(delay, onTap: () => _testOne(n), size: 11.5),
+                  ],
+                ),
               ],
             ),
           ),
@@ -1619,9 +1698,12 @@ class _ProviderNodesSheetState extends ConsumerState<_ProviderNodesSheet> {
                         gridDelegate:
                             SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: cols,
-                          mainAxisSpacing: 4,
-                          crossAxisSpacing: 4,
-                          childAspectRatio: cols == 2 ? 2.6 : 1.9,
+                          mainAxisSpacing:
+                              ref.watch(settingsProvider).nodeGap,
+                          crossAxisSpacing:
+                              ref.watch(settingsProvider).nodeGap,
+                          childAspectRatio: (cols == 2 ? 2.6 : 1.9) /
+                              ref.watch(settingsProvider).nodeScale,
                         ),
                         itemCount: nodes.length,
                         itemBuilder: (context, i) => tile(i),
@@ -1890,12 +1972,29 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
     }
 
     final results = <String, int>{};
+
+    // 先走整组接口：机场节点在组接口下测速正常，逐节点反而容易超时
+    try {
+      final bulk = await client?.testGroupDelay(widget.groupName, url: url) ??
+          const <String, int>{};
+      if (bulk.isNotEmpty) {
+        results.addAll(bulk);
+        if (mounted) {
+          setState(() {
+            _delays.addAll(bulk);
+          });
+          _applyIpv6ForGroup(bulk);
+        }
+      }
+    } catch (_) {}
+
     const concurrency = 6;
     var index = 0;
 
+    final pending = nodes.where((n) => !results.containsKey(n.name)).toList();
     Future<void> worker() async {
-      while (index < nodes.length) {
-        final n = nodes[index++];
+      while (index < pending.length) {
+        final n = pending[index++];
         int? d;
         final prov = providerOf[n.name];
         if (prov != null) {
@@ -1905,16 +2004,39 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
         }
         results[n.name] = d ?? -1;
         if (mounted) setState(() => _delays[n.name] = d ?? -1);
+        if (ref.read(settingsProvider).ipv6Test &&
+            d != null &&
+            d > 0 &&
+            client != null) {
+          final ok = await testIpv6(client, n.name, provider: prov);
+          if (mounted) {
+            ref.read(ipv6SupportProvider.notifier).set(n.name, ok);
+          }
+        }
       }
     }
 
     await Future.wait(List.generate(
-      nodes.length < concurrency ? nodes.length : concurrency,
+      pending.length < concurrency ? pending.length : concurrency,
       (_) => worker(),
     ));
 
     if (mounted) {
       setState(() => _testing = false);
+    }
+    if (ref.read(settingsProvider).ipv6Test && client != null) {
+      try {
+        final v6 = await client.testGroupDelay(
+          widget.groupName,
+          url: kIpv6TestUrl,
+          timeout: 3000,
+        );
+        for (final e in results.entries) {
+          ref
+              .read(ipv6SupportProvider.notifier)
+              .set(e.key, (v6[e.key] ?? 0) > 0);
+        }
+      } catch (_) {}
     }
     } catch (_) {
       if (mounted) setState(() => _testing = false);
@@ -1965,15 +2087,34 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
 
     int? d;
     try {
-      d = prov != null
-          ? await client.testProviderNode(prov, node.name)
-          : await client.testDelay(node.name, url: url);
+      if (prov != null) {
+        d = await client.testProviderNode(prov, node.name, url: url);
+        // 机场节点逐个测常会超时，回落到整机场接口
+        if (d == null || d <= 0) {
+          final bulk = await client.testProviderAll(prov, url: url);
+          d = bulk[node.name];
+        }
+      } else {
+        d = await client.testDelay(node.name, url: url);
+      }
+      // 再兜底：整组接口
+      if (d == null || d <= 0) {
+        final bulk = await client.testGroupDelay(widget.groupName, url: url);
+        d = bulk[node.name];
+      }
     } catch (_) {}
     if (mounted) {
       setState(() {
         _busy.remove(node.name);
         _delays[node.name] = d ?? -1;
       });
+      ref.read(delayOverridesProvider.notifier).set(node.name, d ?? -1);
+      if (ref.read(settingsProvider).ipv6Test && d != null && d > 0) {
+        final ok = await testIpv6(client, node.name, provider: prov);
+        if (mounted) {
+          ref.read(ipv6SupportProvider.notifier).set(node.name, ok);
+        }
+      }
     }
   }
 
@@ -1993,6 +2134,25 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
       ref.read(delayOverridesProvider.notifier).remove(node.name);
     } catch (_) {}
     ref.invalidate(proxiesProvider);
+  }
+
+  /// 用整组 IPv6 测速更新标记
+  Future<void> _applyIpv6ForGroup(Map<String, int> base) async {
+    if (!ref.read(settingsProvider).ipv6Test) return;
+    final client = ref.read(clientProvider);
+    if (client == null || base.isEmpty) return;
+    try {
+      final v6 = await client.testGroupDelay(
+        widget.groupName,
+        url: kIpv6TestUrl,
+        timeout: 5000,
+      );
+      for (final e in base.entries) {
+        ref
+            .read(ipv6SupportProvider.notifier)
+            .set(e.key, (v6[e.key] ?? 0) > 0);
+      }
+    } catch (_) {}
   }
 
   /// 子分组永远排最前，其余按设置排序
@@ -2058,13 +2218,14 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
       final selected = now == n.name;
       final st = ref.watch(settingsProvider);
       return Padding(
-        padding: EdgeInsets.only(bottom: st.nodeGap),
+        padding: const EdgeInsets.only(bottom: 0),
         child: JellyPress(
           haptic: false,
           onTap: () => _select(n),
           scaleTo: 0.98,
           child: Container(
-            padding: EdgeInsets.fromLTRB(11, st.nodePadV, 11, st.nodePadV),
+            padding: EdgeInsets.fromLTRB(11, st.nodePadV * st.nodeScale, 11,
+                st.nodePadV * st.nodeScale),
             decoration: BoxDecoration(
               color: selected
                   ? cs.primary.withValues(alpha: 0.24)
@@ -2106,14 +2267,27 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        nodeSubtitle(n),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: s.textTertiary,
-                            fontSize: 9.5,
-                            height: 1.1),
+                      child: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              nodeSubtitle(n).replaceAll(' / ', '·') +
+                            (supportsV6(
+                                    n,
+                                    ref.watch(ipv6SupportProvider),
+                                    ref.watch(settingsProvider).ipv6Test)
+                                ? '·ipv6'
+                                : ''),
+                              maxLines: 1,
+                              softWrap: false,
+                              style: TextStyle(
+                                  color: s.textTertiary,
+                                  fontSize: 9.5,
+                                  height: 1.1),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -2291,9 +2465,10 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
                   padding: const EdgeInsets.fromLTRB(10, 2, 10, 10),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: cols,
-                    mainAxisSpacing: 4,
-                    crossAxisSpacing: 4,
-                    childAspectRatio: cols == 2 ? 2.9 : 2.1,
+                    mainAxisSpacing: ref.watch(settingsProvider).nodeGap,
+                    crossAxisSpacing: ref.watch(settingsProvider).nodeGap,
+                    childAspectRatio: (cols == 2 ? 2.9 : 2.1) /
+                        ref.watch(settingsProvider).nodeScale,
                   ),
                   itemCount: sorted.length,
                   itemBuilder: (context, i) => tile(i),
@@ -2308,6 +2483,38 @@ class _GroupNodesSheetState extends ConsumerState<_GroupNodesSheet> {
 }
 
 /// 推断节点的 IP 族：内核有时不给，退化为按名字/类型判断
+const kIpv6TestUrl = 'https://ipv6.google.com/generate_204';
+
+/// 是否显示 IPv6 标记：内核 extra 里有该 URL 的成功记录，或本地探测通过
+bool supportsV6(
+  MihomoProxy node,
+  Map<String, bool> local,
+  bool enabled,
+) {
+  if (!enabled) return false;
+  for (final e in node.extra.entries) {
+    if (e.key.toLowerCase().contains('ipv6') && e.value > 0) return true;
+  }
+  return local[node.name] == true;
+}
+
+/// 测节点是否支持 IPv6（用 IPv6-only 地址探测，成功即支持）
+Future<bool> testIpv6(
+  MihomoClient client,
+  String name, {
+  String? provider,
+}) async {
+  try {
+    final d = provider != null
+        ? await client.testProviderNode(provider, name,
+            url: kIpv6TestUrl, timeout: 2500)
+        : await client.testDelay(name, url: kIpv6TestUrl, timeout: 2500);
+    return d != null && d > 0;
+  } catch (_) {
+    return false;
+  }
+}
+
 String ipFamilyOf(MihomoProxy p) {
   final v = p.ipVersion?.toLowerCase();
   if (v != null) {

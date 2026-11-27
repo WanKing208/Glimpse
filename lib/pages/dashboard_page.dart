@@ -116,12 +116,12 @@ class DashboardPage extends ConsumerWidget {
                 children: [
                   Expanded(
                       child: _Editable(id: pair[0], child: _card(pair[0]))),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: pair.length > 1
-                        ? _Editable(id: pair[1], child: _card(pair[1]))
-                        : const SizedBox.shrink(),
-                  ),
+                  if (pair.length > 1) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _Editable(id: pair[1], child: _card(pair[1])),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -130,7 +130,7 @@ class DashboardPage extends ConsumerWidget {
       }
     }
 
-    for (final id in cards) {
+    for (final id in cards.where(kDashboardCards.contains)) {
       if (_bigCards.contains(id)) {
         flush();
         out.add(
@@ -382,6 +382,14 @@ class _ChartPainter extends CustomPainter {
         _line(canvas, startX, slot, maxUp, maxDown, mid, half);
       case 'bar':
         _bars(canvas, startX, slot, maxUp, maxDown, mid, half);
+      case 'smooth':
+        _smooth(canvas, startX, slot, maxUp, maxDown, mid, half);
+      case 'area':
+        _area(canvas, startX, slot, maxUp, maxDown, mid, half, size);
+      case 'step':
+        _step(canvas, startX, slot, maxUp, maxDown, mid, half);
+      case 'ecg':
+        _ecg(canvas, startX, slot, maxUp, maxDown, mid, half);
       default:
         _dots(canvas, startX, slot, maxUp, maxDown, mid, half);
     }
@@ -499,6 +507,151 @@ class _ChartPainter extends CustomPainter {
       old.style != style ||
       old.upColor != upColor ||
       old.downColor != downColor;
+
+  // ---------------------------------------------------------- 更多样式
+
+  Path _smoothPath(List<Offset> pts) {
+    final path = Path();
+    if (pts.isEmpty) return path;
+    path.moveTo(pts.first.dx, pts.first.dy);
+    for (var i = 0; i < pts.length - 1; i++) {
+      final p0 = pts[i];
+      final p1 = pts[i + 1];
+      final mx = (p0.dx + p1.dx) / 2;
+      path.quadraticBezierTo(p0.dx, p0.dy, mx, (p0.dy + p1.dy) / 2);
+    }
+    path.lineTo(pts.last.dx, pts.last.dy);
+    return path;
+  }
+
+  List<Offset> _series(double Function(TrafficPoint) sel, double maxV,
+      double startX, double slot, double mid, double half, bool below) {
+    final out = <Offset>[];
+    for (var i = 0; i < points.length; i++) {
+      final x = startX + slot * i;
+      final v = sel(points[i]).clamp(0.0, maxV) / maxV;
+      out.add(Offset(x, below ? mid + v * half : mid - v * half));
+    }
+    return out;
+  }
+
+  void _smooth(Canvas canvas, double startX, double slot, double maxUp,
+      double maxDown, double mid, double half) {
+    void draw(double Function(TrafficPoint) sel, double maxV, Color color,
+        bool below) {
+      final pts = _series(sel, maxV, startX, slot, mid, half, below);
+      canvas.drawPath(
+        _smoothPath(pts),
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.8
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
+    }
+
+    draw((p) => p.down, maxDown, downColor, false);
+    draw((p) => p.up, maxUp, upColor, true);
+  }
+
+  void _area(Canvas canvas, double startX, double slot, double maxUp,
+      double maxDown, double mid, double half, Size areaSize) {
+    void draw(double Function(TrafficPoint) sel, double maxV, Color color,
+        bool below, Size area) {
+      final pts = _series(sel, maxV, startX, slot, mid, half, below);
+      final line = _smoothPath(pts);
+      final fill = Path.from(line)
+        ..lineTo(pts.last.dx, mid)
+        ..lineTo(pts.first.dx, mid)
+        ..close();
+      canvas.drawPath(
+        fill,
+        Paint()
+          ..shader = LinearGradient(
+            begin: below ? Alignment.topCenter : Alignment.bottomCenter,
+            end: below ? Alignment.bottomCenter : Alignment.topCenter,
+            colors: [
+              color.withValues(alpha: 0.28),
+              color.withValues(alpha: 0),
+            ],
+          ).createShader(Rect.fromLTWH(0, 0, area.width, area.height)),
+      );
+      canvas.drawPath(
+        line,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.8
+          ..strokeCap = StrokeCap.round,
+      );
+      final last = pts.last;
+      canvas.drawCircle(last, 4, Paint()..color = color.withValues(alpha: 0.18));
+      canvas.drawCircle(last, 2, Paint()..color = color);
+    }
+
+    draw((p) => p.down, maxDown, downColor, false, areaSize);
+    draw((p) => p.up, maxUp, upColor, true, areaSize);
+  }
+
+  void _step(Canvas canvas, double startX, double slot, double maxUp,
+      double maxDown, double mid, double half) {
+    void draw(double Function(TrafficPoint) sel, double maxV, Color color,
+        bool below) {
+      final path = Path();
+      var prevY = mid;
+      for (var i = 0; i < points.length; i++) {
+        final x = startX + slot * i;
+        final v = sel(points[i]).clamp(0.0, maxV) / maxV;
+        final y = below ? mid + v * half : mid - v * half;
+        if (i == 0) {
+          path.moveTo(x, y);
+        } else {
+          path.lineTo(x, prevY);
+          path.lineTo(x, y);
+        }
+        prevY = y;
+      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.8,
+      );
+    }
+
+    draw((p) => p.down, maxDown, downColor, false);
+    draw((p) => p.up, maxUp, upColor, true);
+  }
+
+  void _ecg(Canvas canvas, double startX, double slot, double maxUp,
+      double maxDown, double mid, double half) {
+    void draw(double Function(TrafficPoint) sel, double maxV, Color color,
+        bool below) {
+      final path = Path()..moveTo(startX - slot, mid);
+      for (var i = 0; i < points.length; i++) {
+        final x = startX + slot * i;
+        final v = sel(points[i]).clamp(0.0, maxV) / maxV;
+        final amp = v * half;
+        path.lineTo(x - slot * 0.3, mid + (below ? amp * 0.2 : -amp * 0.2));
+        path.lineTo(x, below ? mid + amp : mid - amp);
+        path.lineTo(x + slot * 0.3, mid);
+      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.6
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
+    }
+
+    draw((p) => p.down, maxDown, downColor, false);
+    draw((p) => p.up, maxUp, upColor, true);
+  }
 }
 
 // ---------------------------------------------------------------- 网络信息
@@ -842,7 +995,7 @@ class _LatencyCard extends ConsumerStatefulWidget {
 
 class _LatencyCardState extends ConsumerState<_LatencyCard> {
   static const _targets = [
-    ('百度', 'https://www.baidu.com'),
+    ('Baidu', 'https://www.baidu.com'),
     ('YouTube', 'https://www.youtube.com'),
     ('GitHub', 'https://github.com'),
     ('Cloudflare', 'https://www.cloudflare.com'),
@@ -1023,12 +1176,14 @@ class SmallCard extends StatelessWidget {
     required this.label,
     required this.child,
     this.onTap,
+    this.trailing,
   });
 
   final IconData icon;
   final String label;
   final Widget child;
   final VoidCallback? onTap;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -1051,6 +1206,7 @@ class SmallCard extends StatelessWidget {
                   style: TextStyle(color: s.textSecondary, fontSize: 11.5),
                 ),
               ),
+              if (trailing != null) trailing!,
             ],
           ),
           const Spacer(),
@@ -1061,12 +1217,42 @@ class SmallCard extends StatelessWidget {
   }
 }
 
-class _ConnStatsCard extends ConsumerWidget {
+class _ConnStatsCard extends ConsumerStatefulWidget {
   const _ConnStatsCard();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ConnStatsCard> createState() => _ConnStatsCardState();
+}
+
+class _ConnStatsCardState extends ConsumerState<_ConnStatsCard> {
+  final List<double> _points = [];
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      // 停在其他页面时不采样（页面仍在 Offstage 缓存里）
+      if (ref.read(activeTabProvider) != 0) return;
+      final n = ref.read(connectionsProvider).value?.length ?? 0;
+      setState(() {
+        _points.add(n.toDouble());
+        if (_points.length > 40) _points.removeAt(0);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final s = surfacesOf(context);
+    final cs = Theme.of(context).colorScheme;
     final conns = ref.watch(connectionsProvider).value ?? const [];
     var up = 0;
     var down = 0;
@@ -1074,22 +1260,33 @@ class _ConnStatsCard extends ConsumerWidget {
       up += c.upload;
       down += c.download;
     }
+
     return SmallCard(
       icon: Icons.link_rounded,
       label: '连接统计',
       onTap: null,
+      trailing: Text(
+        '${conns.length} 条',
+        style: TextStyle(
+          color: s.textPrimary,
+          fontSize: 11.5,
+          fontWeight: FontWeight.w700,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              MetricNumber('${conns.length}', size: 24),
-              const SizedBox(width: 4),
-              Text('条',
-                  style: TextStyle(color: s.textTertiary, fontSize: 10.5)),
-            ],
+          // 连接数走势（心率式折线）
+          SizedBox(
+            height: 36,
+            width: double.infinity,
+            child: CustomPaint(
+              painter: _PulsePainter(
+                points: _points.isEmpty ? const [0, 0, 0] : _points,
+                color: cs.primary,
+              ),
+            ),
           ),
           const SizedBox(height: 4),
           Text('↑ ${fmtBytes(up)}   ↓ ${fmtBytes(down)}',

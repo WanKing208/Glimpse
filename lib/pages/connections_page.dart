@@ -646,9 +646,13 @@ class _ConnTile extends StatelessWidget {
     };
   }
 
-  String _time(DateTime d) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
+  /// 相对时间：几秒前 / 几分钟前（和 zashboard 一致）
+  String _ago(DateTime d) {
+    final diff = DateTime.now().difference(d);
+    if (diff.inSeconds < 60) return '${diff.inSeconds} 秒前';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} 分钟前';
+    if (diff.inHours < 24) return '${diff.inHours} 小时前';
+    return '${diff.inDays} 天前';
   }
 
   @override
@@ -699,7 +703,13 @@ class _ConnTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  line('类型', conn.type, strong: true),
+                  line(
+                    '类型',
+                    conn.network.isEmpty
+                        ? conn.type
+                        : '${conn.type} · ${conn.network.toUpperCase()}',
+                    strong: true,
+                  ),
                   line('域名', conn.host.isEmpty ? conn.destinationIP : conn.host),
                   line('链路', conn.chainText),
                   line('规则', conn.rulePayload.isEmpty
@@ -731,7 +741,7 @@ class _ConnTile extends StatelessWidget {
                           fontFeatures: const [FontFeature.tabularFigures()])),
                 ],
                 const Spacer(),
-                Text(_time(conn.start),
+                Text(_ago(conn.start),
                     style: TextStyle(
                         color: s.textTertiary,
                         fontSize: 10,

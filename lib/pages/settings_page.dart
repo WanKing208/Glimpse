@@ -138,22 +138,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               onChanged: (v) =>
                   notifier.patch((x) => x.copyWith(nodeFontSize: v)),
             ),
-            _SliderRow(
-              title: '上下间距',
-              value: st.nodeGap,
-              min: 2,
-              max: 12,
-              suffix: 'dp',
-              onChanged: (v) => notifier.patch((x) => x.copyWith(nodeGap: v)),
-            ),
-            _SliderRow(
-              title: '内部留白',
-              value: st.nodePadV,
-              min: 4,
-              max: 16,
-              suffix: 'dp',
-              onChanged: (v) => notifier.patch((x) => x.copyWith(nodePadV: v)),
-            ),
           ]),
           _Block(title: tr('界面'), children: [
             _SliderRow(
@@ -238,7 +222,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             _ChoiceRow<String>(
               title: tr('图形样式'),
               value: st.chartStyle,
-              options: const {'bar': '块状', 'dot': '点阵', 'line': '折线'},
+              options: const {
+                'dot': '点阵',
+                'bar': '块状',
+                'line': '折线',
+                'smooth': '平滑曲线',
+                'area': '渐变面积',
+                'step': '阶梯线',
+                'ecg': '心电尖峰',
+              },
               onChanged: (v) =>
                   notifier.patch((x) => x.copyWith(chartStyle: v)),
             ),
@@ -445,6 +437,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             value: st.groupByProvider,
             onChanged: (v) =>
                 notifier.patch((x) => x.copyWith(groupByProvider: v)),
+          ),
+          _Gap(),
+          _SwitchRow(
+            title: 'IPv6 测试',
+            subtitle: '测速时用 IPv6 地址探测节点',
+            value: st.ipv6Test,
+            onChanged: (v) =>
+                notifier.patch((x) => x.copyWith(ipv6Test: v)),
           ),
           _Gap(),
           _SwitchRow(
@@ -990,7 +990,7 @@ class _KernelPortsState extends ConsumerState<_KernelPorts> {
           },
         ),
         _SwitchRow(
-          title: tr('IPv6'),
+          title: 'IPv6（内核）',
           value: _ipv6,
           onChanged: (v) {
             setState(() => _ipv6 = v);
@@ -1504,32 +1504,58 @@ class _ChoiceRow<T> extends StatelessWidget {
       haptic: false,
       scaleTo: 0.99,
       onTap: () async {
-        final picked = await showJellySheet<T>(
+        final picked = await showJellyDialog<T>(
           context: context,
-          builder: (ctx) => SafeArea(
+          maxWidth: 320,
+          builder: (ctx) => Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: Text(title,
                       style: TextStyle(
                           color: s.textPrimary,
                           fontSize: 16,
                           fontWeight: FontWeight.w700)),
                 ),
-                for (final e in options.entries)
-                  ListTile(
-                    title: Text(e.value,
-                        style:
-                            TextStyle(color: s.textPrimary, fontSize: 14.5)),
-                    trailing: e.key == value
-                        ? Icon(Icons.check_rounded,
-                            color: Theme.of(context).colorScheme.primary)
-                        : null,
-                    onTap: () => Navigator.of(ctx).pop(e.key),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final e in options.entries)
+                          JellyPress(
+                            haptic: false,
+                            scaleTo: 0.97,
+                            onTap: () => Navigator.of(ctx).pop(e.key),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 11),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(e.value,
+                                        style: TextStyle(
+                                            color: s.textPrimary,
+                                            fontSize: 14)),
+                                  ),
+                                  if (e.key == value)
+                                    Icon(Icons.check_rounded,
+                                        size: 17,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                const SizedBox(height: 8),
+                ),
               ],
             ),
           ),

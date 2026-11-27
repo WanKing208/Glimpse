@@ -28,6 +28,7 @@ class MihomoProxy {
     this.icon,
     this.groupHint = false,
     this.ipVersion,
+    this.extra = const {},
     this.xudp = false,
   });
 
@@ -43,6 +44,7 @@ class MihomoProxy {
         icon: icon,
         groupHint: groupHint,
         ipVersion: ipVersion,
+        extra: extra,
         xudp: xudp,
       );
 
@@ -60,6 +62,9 @@ class MihomoProxy {
 
   /// IP 版本（部分内核会返回 ip-version 字段）
   final String? ipVersion;
+
+  /// 按测试 URL 记录的历史延时（内核返回的 extra 字段）
+  final Map<String, int> extra;
 
   /// 是否支持 xudp
   final bool xudp;
@@ -110,6 +115,7 @@ class MihomoProxy {
               json['ip_version'] ??
               json['ipversion'])
           ?.toString(),
+      extra: _parseExtra(json['extra']),
     );
   }
 }
@@ -384,4 +390,21 @@ class RuleProviderInfo {
       format: j['format']?.toString(),
     );
   }
+}
+
+
+/// 解析内核的 extra：{ url: { history: [{delay: 123}] } } → { url: 123 }
+Map<String, int> _parseExtra(dynamic raw) {
+  if (raw is! Map) return const {};
+  final out = <String, int>{};
+  raw.forEach((k, v) {
+    if (v is! Map) return;
+    final history = v['history'];
+    if (history is! List || history.isEmpty) return;
+    final last = history.last;
+    if (last is! Map) return;
+    final d = asInt(last['delay']);
+    if (d != null) out[k.toString()] = d;
+  });
+  return out;
 }

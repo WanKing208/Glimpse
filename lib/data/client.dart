@@ -157,10 +157,18 @@ class MihomoClient {
   }
 
   /// 供应商全量测速：返回 节点名 -> 延时
-  Future<Map<String, int>> testProviderAll(String provider) async {
+  Future<Map<String, int>> testProviderAll(
+    String provider, {
+    String? url,
+    int timeout = 5000,
+  }) async {
     try {
       final r = await dio.get(
         '/providers/proxies/${Uri.encodeComponent(provider)}/healthcheck',
+        queryParameters: {
+          if (url != null) 'url': url,
+          'timeout': timeout,
+        },
         options: Options(receiveTimeout: const Duration(seconds: 20)),
       );
       final out = <String, int>{};

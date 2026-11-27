@@ -64,7 +64,7 @@ class _HomeShellState extends ConsumerState<HomeShell>
     with SingleTickerProviderStateMixin {
   late final AnimationController _anim = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 460),
+    duration: const Duration(milliseconds: 560),
     value: 1,
   );
 
@@ -89,12 +89,6 @@ class _HomeShellState extends ConsumerState<HomeShell>
   void initState() {
     super.initState();
     _prebuildAround(ref.read(shellTabProvider));
-    // 首帧后把剩余页面也建好，避免第一次滑到某页时才构建
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        setState(() => _built.addAll(List.generate(Tabs.settings + 1, (i) => i)));
-      }
-    });
   }
 
   @override
@@ -108,6 +102,7 @@ class _HomeShellState extends ConsumerState<HomeShell>
     final index = ref.watch(shellTabProvider);
 
     ref.listen<int>(shellTabProvider, (prev, next) {
+      ref.read(activeTabProvider.notifier).set(next);
       // 淡入 + 轻微回弹，替代拖动式滑动
       _anim.forward(from: 0);
     });
@@ -191,7 +186,7 @@ class _HomeShellState extends ConsumerState<HomeShell>
                   final t = _anim.value.clamp(0.0, 1.0);
                   // 弹性曲线：先放大再回弹，和底栏的手感一致
                   final e = Curves.elasticOut.transform(t);
-                  final scale = 1 + 0.04 * (1 - e);
+                  final scale = 1 + 0.05 * (1 - e);
                   return Opacity(
                     opacity: 0.72 + 0.28 * Curves.easeOutCubic.transform(t),
                     child: Transform.scale(scale: scale, child: child),
@@ -292,14 +287,7 @@ class _FloatingNavBarState extends State<_FloatingNavBar>
     final radius = widget.radius.clamp(0.0, 34.0);
     final opacity = widget.opacity.clamp(0.35, 1.0);
 
-    Widget bar = AnimatedBuilder(
-      animation: _pulse,
-      builder: (context, child) {
-        final t = _pulse.value.clamp(0.0, 1.0);
-        final s = 1 + 0.04 * math.sin(t * math.pi);
-        return Transform.scale(scale: s, child: child);
-      },
-      child: Container(
+    final bar = Container(
         height: 62,
         decoration: BoxDecoration(
           color: (dark ? s.card : Colors.white).withValues(alpha: opacity),
@@ -308,14 +296,6 @@ class _FloatingNavBarState extends State<_FloatingNavBar>
             color: s.hairline.withValues(alpha: 0.5),
             width: 0.7,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: dark ? 0.45 : 0.10),
-              blurRadius: 28,
-              offset: const Offset(0, 10),
-              spreadRadius: -6,
-            ),
-          ],
         ),
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -360,62 +340,35 @@ class _FloatingNavBarState extends State<_FloatingNavBar>
             );
           },
         ),
-      ),
     );
 
-    Widget barWithGlass = bar;
+    // 只模糊底栏本体，外围不再做过渡模糊
+    Widget panel = bar;
     if (widget.glass) {
-      barWithGlass = BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-        child: bar,
+      panel = ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: panel,
+        ),
       );
     }
 
-    final dock = Padding(
-      padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottom * 0.5),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: barWithGlass,
-      ),
-    );
-
-    if (!widget.glass) return RepaintBoundary(child: dock);
-
-    // 底栏上方 18px 过渡：内容滚到这里先被模糊，不直接压到底栏下
-    final tint = (dark ? s.card : Colors.white);
-    final apron = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: SizedBox(
-        height: 18,
-        child: ClipRRect(
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(radius + 8),
-          ),
-          child: ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      tint.withValues(alpha: 0),
-                      tint.withValues(alpha: opacity * 0.85),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+    // 缩放放在裁剪外层，点击放大时不会被裁掉
+    panel = AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, child) {
+        final t = _pulse.value.clamp(0.0, 1.0);
+        final s = 1 + 0.04 * math.sin(t * math.pi);
+        return Transform.scale(scale: s, child: child);
+      },
+      child: panel,
     );
 
     return RepaintBoundary(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [apron, dock],
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottom * 0.5),
+        child: panel,
       ),
     );
   }

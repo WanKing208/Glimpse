@@ -86,6 +86,8 @@ class Settings {
     this.nodeFontSize = 11.5,
     this.nodeGap = 4.0,
     this.nodePadV = 9.0,
+    this.nodeScale = 1.0,
+    this.ipv6Test = false,
     this.delayTestUrl = 'https://www.gstatic.com/generate_204',
     this.delayTestMode = 'app',
     this.useWallpaper = false,
@@ -94,7 +96,7 @@ class Settings {
     this.navGlass = true,
     this.backgroundImage = '',
     this.backgroundDim = 0.35,
-    this.chartStyle = 'bar',
+    this.chartStyle = 'dot',
     this.chartUpColor = 0xFF007AFF,
     this.chartDownColor = 0xFF34C759,
     this.surfaceOpacity = 1.0,
@@ -193,6 +195,12 @@ class Settings {
   /// 节点卡内部上下留白
   final double nodePadV;
 
+  /// 节点卡整体大小（影响网格卡片高度）
+  final double nodeScale;
+
+  /// 是否测试节点 IPv6 支持（开启后测速时附带探测）
+  final bool ipv6Test;
+
   /// 测延时用的地址
   final String delayTestUrl;
 
@@ -285,6 +293,8 @@ class Settings {
     double? nodeFontSize,
     double? nodeGap,
     double? nodePadV,
+    double? nodeScale,
+    bool? ipv6Test,
   }) {
     return Settings(
       baseUrl: baseUrl ?? this.baseUrl,
@@ -340,6 +350,8 @@ class Settings {
       nodeFontSize: nodeFontSize ?? this.nodeFontSize,
       nodeGap: nodeGap ?? this.nodeGap,
       nodePadV: nodePadV ?? this.nodePadV,
+      nodeScale: nodeScale ?? this.nodeScale,
+      ipv6Test: ipv6Test ?? this.ipv6Test,
     );
   }
 }
@@ -408,7 +420,7 @@ class SettingsNotifier extends Notifier<Settings> {
       navGlass: prefs.getBool('${_kPrefix}navGlass') ?? true,
       backgroundImage: prefs.getString('${_kPrefix}bg') ?? '',
       backgroundDim: prefs.getDouble('${_kPrefix}bgDim') ?? 0.35,
-      chartStyle: prefs.getString('${_kPrefix}chartStyle') ?? 'bar',
+      chartStyle: prefs.getString('${_kPrefix}chartStyle') ?? 'dot',
       chartUpColor: prefs.getInt('${_kPrefix}chartUp') ?? 0xFF007AFF,
       chartDownColor: prefs.getInt('${_kPrefix}chartDown') ?? 0xFF34C759,
       surfaceOpacity: prefs.getDouble('${_kPrefix}surfOpacity') ?? 1.0,
@@ -431,6 +443,8 @@ class SettingsNotifier extends Notifier<Settings> {
       nodeFontSize: prefs.getDouble('${_kPrefix}nodeFont') ?? 11.5,
       nodeGap: prefs.getDouble('${_kPrefix}nodeGap') ?? 4.0,
       nodePadV: prefs.getDouble('${_kPrefix}nodePadV') ?? 9.0,
+      nodeScale: prefs.getDouble('${_kPrefix}nodeScale') ?? 1.0,
+      ipv6Test: prefs.getBool('${_kPrefix}ipv6Test') ?? false,
     );
   }
 
@@ -513,6 +527,8 @@ class SettingsNotifier extends Notifier<Settings> {
     prefs.setDouble('${_kPrefix}nodeFont', s.nodeFontSize);
     prefs.setDouble('${_kPrefix}nodeGap', s.nodeGap);
     prefs.setDouble('${_kPrefix}nodePadV', s.nodePadV);
+    prefs.setDouble('${_kPrefix}nodeScale', s.nodeScale);
+    prefs.setBool('${_kPrefix}ipv6Test', s.ipv6Test);
   }
 
   void addBackend(Backend b) {
@@ -680,6 +696,7 @@ final proxiesProvider = StreamProvider<Map<String, MihomoProxy>>((ref) async* {
       }
       yield const {};
     }
+    // 页面不可见时只保留节拍、跳过实际请求，省电省流量
     await Future<void>.delayed(const Duration(seconds: 3));
   }
 });
@@ -984,7 +1001,11 @@ class DashboardCardsNotifier extends Notifier<List<String>> {
   List<String> build() {
     final raw = prefs.getString('${_kPrefix}dash.cards');
     if (raw == null || raw.isEmpty) return kDashboardCards;
-    final list = raw.split(',').where((e) => e.isNotEmpty).toList();
+    final list = raw
+        .split(',')
+        .where((e) => kDashboardCards.contains(e))
+        .toSet()
+        .toList();
     return list.isEmpty ? kDashboardCards : list;
   }
 
@@ -994,12 +1015,12 @@ class DashboardCardsNotifier extends Notifier<List<String>> {
   }
 
   void toggle(String id) {
-    final list = [...state];
-    if (list.contains(id)) {
-      list.remove(id);
-    } else {
-      list.add(id);
-    }
+    // 去重并清掉历史遗留的未知 id，避免出现删不掉的空模块
+    final list = <String>[
+      for (final e in state)
+        if (e != id && kDashboardCards.contains(e)) e,
+    ];
+    if (!state.contains(id)) list.add(id);
     _save(list);
   }
 
@@ -1236,3 +1257,65 @@ final nowOverrideProvider =
     NotifierProvider<NowOverrideNotifier, Map<String, String>>(
   NowOverrideNotifier.new,
 );
+
+
+/// 节点 IPv6 支持情况（只有开启「IPv6 测试」并测出可用才会为 true）
+class Ipv6SupportNotifier extends Notifier<Map<String, bool>> {
+  static const _key = 'glimpse.ipv6Support';
+
+  @override
+  Map<String, bool> build() {
+    _load();
+    return const {};
+  }
+
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_key);
+      if (raw == null || raw.isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        state = decoded.map((k, v) => MapEntry(k.toString(), v == true));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _save() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_key, jsonEncode(state));
+    } catch (_) {}
+  }
+
+  void set(String name, bool ok) {
+    if (state[name] == ok) return;
+    state = {...state, name: ok};
+    _save();
+  }
+
+  void clear() {
+    state = const {};
+    _save();
+  }
+}
+
+final ipv6SupportProvider =
+    NotifierProvider<Ipv6SupportNotifier, Map<String, bool>>(
+  Ipv6SupportNotifier.new,
+);
+
+
+/// 当前可见的页面索引（由 shell 写入，用于在页面不可见时降频）
+class ActiveTabNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void set(int v) {
+    if (state == v) return;
+    state = v;
+  }
+}
+
+final activeTabProvider =
+    NotifierProvider<ActiveTabNotifier, int>(ActiveTabNotifier.new);
